@@ -1,0 +1,19 @@
+{
+  "name": "crmport",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local plugin server bridging CRM browser extensions to dev tools",
+  "workspaces": [
+    "packages/server",
+    "packages/sdk"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "dev": "npm run dev --workspace=packages/server",
+    "build:server": "npm run build --workspace=packages/server",
+    "build:sdk": "npm run build --workspace=packages/sdk"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

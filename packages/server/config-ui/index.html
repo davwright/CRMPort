@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CRMPort — Config</title>
+  <style>
+    :root {
+      --bg: #1a1a2e;
+      --surface: #16213e;
+      --surface2: #0f3460;
+      --accent: #e94560;
+      --text: #eee;
+      --text-muted: #999;
+      --green: #4ade80;
+      --red: #f87171;
+      --yellow: #fbbf24;
+      --radius: 8px;
+      --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      --mono: 'Cascadia Code', 'Fira Code', Consolas, monospace;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: var(--font); background: var(--bg); color: var(--text); min-height: 100vh; }
+    header {
+      background: var(--surface);
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 2px solid var(--accent);
+    }
+    header h1 { font-size: 20px; font-weight: 600; }
+    header h1 span { color: var(--accent); }
+    header .version { color: var(--text-muted); font-size: 14px; }
+    nav {
+      display: flex;
+      gap: 0;
+      background: var(--surface);
+      border-bottom: 1px solid #333;
+    }
+    nav button {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      padding: 12px 20px;
+      cursor: pointer;
+      font-size: 14px;
+      border-bottom: 2px solid transparent;
+      transition: all 0.2s;
+    }
+    nav button:hover { color: var(--text); }
+    nav button.active { color: var(--accent); border-bottom-color: var(--accent); }
+    main { max-width: 960px; margin: 0 auto; padding: 24px; }
+    .tab { display: none; }
+    .tab.active { display: block; }
+    .card {
+      background: var(--surface);
+      border-radius: var(--radius);
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+    .card h2 { font-size: 16px; margin-bottom: 12px; color: var(--accent); }
+    table { width: 100%; border-collapse: collapse; }
+    th { text-align: left; padding: 8px 12px; color: var(--text-muted); font-size: 12px; text-transform: uppercase; border-bottom: 1px solid #333; }
+    td { padding: 10px 12px; border-bottom: 1px solid #222; font-size: 14px; }
+    .status { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+    .status.running { background: var(--green); }
+    .status.stopped { background: var(--text-muted); }
+    .status.error { background: var(--red); }
+    .btn {
+      background: var(--surface2);
+      color: var(--text);
+      border: 1px solid #444;
+      padding: 6px 14px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+      transition: background 0.2s;
+    }
+    .btn:hover { background: var(--accent); border-color: var(--accent); }
+    .btn-danger { border-color: var(--red); color: var(--red); }
+    .btn-danger:hover { background: var(--red); color: #fff; }
+    .stat { display: inline-block; margin-right: 24px; }
+    .stat-label { font-size: 12px; color: var(--text-muted); }
+    .stat-value { font-size: 18px; font-weight: 600; }
+    .cap-list { list-style: none; }
+    .cap-list li { padding: 4px 0; font-family: var(--mono); font-size: 13px; }
+    .cap-list li::before { margin-right: 6px; }
+    .cap-allow::before { content: '\2705'; }
+    .cap-deny::before { content: '\1F6AB'; }
+    .log-container {
+      background: #111;
+      border-radius: var(--radius);
+      padding: 12px;
+      font-family: var(--mono);
+      font-size: 12px;
+      max-height: 400px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    .log-line { padding: 2px 0; }
+    .log-info { color: #8be9fd; }
+    .log-warn { color: var(--yellow); }
+    .log-error { color: var(--red); }
+    .field { margin-bottom: 12px; }
+    .field label { display: block; font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
+    .field input, .field select {
+      background: #111;
+      border: 1px solid #444;
+      color: var(--text);
+      padding: 8px 12px;
+      border-radius: 4px;
+      width: 100%;
+      font-size: 14px;
+    }
+    .actions { display: flex; gap: 8px; }
+    .fingerprint { font-family: var(--mono); font-size: 12px; color: var(--text-muted); word-break: break-all; }
+    .empty { color: var(--text-muted); text-align: center; padding: 40px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1><span>CRM</span>Port</h1>
+    <span class="version" id="version">v—</span>
+  </header>
+  <nav>
+    <button class="active" data-tab="server">Server</button>
+    <button data-tab="plugins">Plugins</button>
+    <button data-tab="security">Security</button>
+    <button data-tab="logs">Logs</button>
+    <button data-tab="settings">Settings</button>
+  </nav>
+  <main>
+    <!-- Server Tab -->
+    <div class="tab active" id="tab-server">
+      <div class="card">
+        <h2>Server Status</h2>
+        <div>
+          <span class="stat">
+            <div class="stat-label">Version</div>
+            <div class="stat-value" id="srv-version">—</div>
+          </span>
+          <span class="stat">
+            <div class="stat-label">Uptime</div>
+            <div class="stat-value" id="srv-uptime">—</div>
+          </span>
+          <span class="stat">
+            <div class="stat-label">Plugins</div>
+            <div class="stat-value" id="srv-plugins">—</div>
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Plugins Tab -->
+    <div class="tab" id="tab-plugins">
+      <div class="card">
+        <h2>Registered Plugins</h2>
+        <table>
+          <thead>
+            <tr><th>Plugin</th><th>Version</th><th>Status</th><th>Actions</th></tr>
+          </thead>
+          <tbody id="plugin-list">
+            <tr><td colspan="4" class="empty">No plugins registered</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div id="plugin-detail" style="display:none">
+        <div class="card">
+          <h2 id="detail-name">Plugin Details</h2>
+          <h3 style="color:var(--text-muted);font-size:13px;margin:8px 0">Capabilities</h3>
+          <ul class="cap-list" id="detail-caps"></ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- Security Tab -->
+    <div class="tab" id="tab-security">
+      <div class="card">
+        <h2>Server Identity</h2>
+        <div class="field">
+          <label>Public Key Fingerprint</label>
+          <div class="fingerprint" id="sec-fingerprint">—</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Logs Tab -->
+    <div class="tab" id="tab-logs">
+      <div class="card">
+        <h2>Server Logs</h2>
+        <div class="log-container" id="log-container">
+          <div class="log-line log-info">Connecting to server...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Settings Tab -->
+    <div class="tab" id="tab-settings">
+      <div class="card">
+        <h2>Server Settings</h2>
+        <div class="field">
+          <label>Port</label>
+          <input type="number" id="set-port" value="7700">
+        </div>
+        <div class="field">
+          <label>Update Interval (seconds)</label>
+          <input type="number" id="set-interval" value="60">
+        </div>
+        <div class="field">
+          <label>Log Level</label>
+          <select id="set-loglevel">
+            <option value="debug">Debug</option>
+            <option value="info" selected>Info</option>
+            <option value="warn">Warn</option>
+            <option value="error">Error</option>
+          </select>
+        </div>
+        <div class="actions">
+          <button class="btn" id="btn-save-settings">Save Settings</button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    // Tab switching
+    document.querySelectorAll('nav button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+      });
+    });
+
+    const API = `http://${location.hostname}:${location.port}`;
+
+    function formatUptime(seconds) {
+      const h = Math.floor(seconds / 3600);
+      const m = Math.floor((seconds % 3600) / 60);
+      const s = seconds % 60;
+      return `${h}h ${m}m ${s}s`;
+    }
+
+    async function refresh() {
+      try {
+        const health = await fetch(API + '/health').then(r => r.json());
+        document.getElementById('version').textContent = 'v' + health.version;
+        document.getElementById('srv-version').textContent = health.version;
+        document.getElementById('srv-uptime').textContent = formatUptime(health.uptime);
+        document.getElementById('srv-plugins').textContent = health.plugins.length;
+
+        // Plugins
+        const pluginsRes = await fetch(API + '/api/plugins').then(r => r.json());
+        const tbody = document.getElementById('plugin-list');
+        if (pluginsRes.registered.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="4" class="empty">No plugins registered</td></tr>';
+        } else {
+          tbody.innerHTML = pluginsRes.registered.map(p => {
+            const running = health.plugins.find(hp => hp.pluginId === p.pluginId);
+            const status = running ? running.status : 'stopped';
+            return `<tr>
+              <td>${p.displayName || p.pluginId}</td>
+              <td>${p.version}</td>
+              <td><span class="status ${status}"></span>${status}</td>
+              <td class="actions">
+                <button class="btn" onclick="showDetail('${p.pluginId}')">Perms</button>
+              </td>
+            </tr>`;
+          }).join('');
+        }
+
+        // Security
+        const ver = await fetch(API + '/api/version').then(r => r.json());
+        document.getElementById('sec-fingerprint').textContent = ver.fingerprint || 'No key loaded';
+
+        // Settings
+        const cfg = await fetch(API + '/api/config').then(r => r.json());
+        document.getElementById('set-port').value = cfg.port;
+        document.getElementById('set-interval').value = Math.floor(cfg.updateIntervalMs / 1000);
+        document.getElementById('set-loglevel').value = cfg.logLevel;
+      } catch (e) {
+        document.getElementById('srv-version').textContent = 'offline';
+      }
+    }
+
+    async function showDetail(pluginId) {
+      const pluginsRes = await fetch(API + '/api/plugins').then(r => r.json());
+      const p = pluginsRes.registered.find(r => r.pluginId === pluginId);
+      if (!p) return;
+
+      document.getElementById('detail-name').textContent = p.displayName || p.pluginId;
+      const caps = document.getElementById('detail-caps');
+      caps.innerHTML = (p.capabilities || []).map(c =>
+        `<li class="cap-allow">${c}</li>`
+      ).join('');
+      document.getElementById('plugin-detail').style.display = 'block';
+    }
+
+    document.getElementById('btn-save-settings').addEventListener('click', async () => {
+      const body = {
+        port: parseInt(document.getElementById('set-port').value),
+        updateIntervalMs: parseInt(document.getElementById('set-interval').value) * 1000,
+        logLevel: document.getElementById('set-loglevel').value,
+      };
+      await fetch(API + '/api/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      refresh();
+    });
+
+    // Auto-refresh
+    refresh();
+    setInterval(refresh, 5000);
+  </script>
+</body>
+</html>
