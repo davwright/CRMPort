@@ -24,7 +24,7 @@ CRMPort runs as a system tray application on your machine. Your browser extensio
 
 ### Install the server
 
-Download the latest `.msi` from [Releases](https://github.com/user/CRMPort/releases) and run it. The installer:
+Download the latest `.msi` from [Releases](https://github.com/davwright/CRMPort/releases) and run it. The installer:
 1. Prompts for UAC elevation
 2. Installs to `Program Files\CRMPort`
 3. Registers autostart
