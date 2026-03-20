@@ -46,15 +46,54 @@ if (!fs.existsSync(path.join(serverDist, 'main.js'))) {
   throw new Error('Server not built — build step failed');
 }
 
-// TODO: Replace with real MSI build (WiX / Inno Setup) when ready
 const installerName = `CRMPort-${version}-setup`;
 const assetName = `${installerName}.zip`;
 const assetPath = path.join(distDir, assetName);
 
+// Stage everything into a temp directory for zipping
+const stageDir = path.join(distDir, 'stage');
+if (fs.existsSync(stageDir)) fs.rmSync(stageDir, { recursive: true });
+fs.mkdirSync(stageDir, { recursive: true });
+
+// Copy built server
+execSync(`xcopy /s /y /q "${serverDist}\\*" "${stageDir}\\"`, { stdio: 'inherit' });
+
+// Copy config-ui
+const configUiSrc = path.join(rootDir, 'packages', 'server', 'config-ui');
+const configUiDst = path.join(stageDir, 'config-ui');
+fs.mkdirSync(configUiDst, { recursive: true });
+execSync(`xcopy /s /y /q "${configUiSrc}\\*" "${configUiDst}\\"`, { stdio: 'inherit' });
+
+// Copy assets (icon)
+const assetsSrc = path.join(rootDir, 'packages', 'server', 'assets');
+if (fs.existsSync(assetsSrc)) {
+  const assetsDst = path.join(stageDir, 'assets');
+  fs.mkdirSync(assetsDst, { recursive: true });
+  execSync(`xcopy /s /y /q "${assetsSrc}\\*" "${assetsDst}\\"`, { stdio: 'inherit' });
+}
+
+// Copy package.json for version info
+fs.copyFileSync(
+  path.join(rootDir, 'packages', 'server', 'package.json'),
+  path.join(stageDir, 'package.json'),
+);
+
+// Install production deps into stage
+execSync('npm install --omit=dev', { cwd: stageDir, stdio: 'inherit' });
+
+// Copy install/uninstall scripts
+fs.copyFileSync(path.join(rootDir, 'scripts', 'install.bat'), path.join(stageDir, 'install.bat'));
+fs.copyFileSync(path.join(rootDir, 'scripts', 'uninstall.bat'), path.join(stageDir, 'uninstall.bat'));
+
+// Zip it
 console.log(`Creating ${assetName}...`);
-execSync(`powershell -Command "Compress-Archive -Path '${serverDist}\\*' -DestinationPath '${assetPath}' -Force"`, {
+if (fs.existsSync(assetPath)) fs.unlinkSync(assetPath);
+execSync(`powershell -Command "Compress-Archive -Path '${stageDir}\\*' -DestinationPath '${assetPath}'"`, {
   stdio: 'inherit',
 });
+
+// Clean up stage
+fs.rmSync(stageDir, { recursive: true });
 
 // ── Step 3: Sign ────────────────────────────────────────────────────
 
