@@ -60,99 +60,89 @@ function restartServer(): void {
 }
 
 async function initTray(): Promise<void> {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { default: SysTray } = require('systray2') as typeof import('systray2');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { default: SysTray } = require('systray2') as typeof import('systray2');
 
-    const iconPath = path.join(__dirname, '..', 'assets', 'icon.ico');
-    const hasIcon = fs.existsSync(iconPath);
+  const iconPath = path.join(__dirname, '..', 'assets', 'icon.ico');
+  const icon = fs.readFileSync(iconPath).toString('base64');
 
-    const systray = new SysTray({
-      menu: {
-        icon: hasIcon ? fs.readFileSync(iconPath).toString('base64') : '',
-        title: '',
-        tooltip: `CRMPort v${pkg.version}`,
-        items: [
-          {
-            title: `CRMPort v${pkg.version}`,
-            tooltip: 'Server version',
-            enabled: false,
-          },
-          { title: '─────────', tooltip: '', enabled: false },
-          {
-            title: 'Open Config',
-            tooltip: 'Open configuration in browser',
-            enabled: true,
-          },
-          {
-            title: 'Restart Server',
-            tooltip: 'Restart the server process',
-            enabled: true,
-          },
-          { title: '─────────', tooltip: '', enabled: false },
-          {
-            title: 'Quit',
-            tooltip: 'Stop server and exit',
-            enabled: true,
-          },
-        ],
-      },
-      debug: false,
-      copyDir: true,
-    });
+  const systray = new SysTray({
+    menu: {
+      icon,
+      title: '',
+      tooltip: `CRMPort v${pkg.version}`,
+      items: [
+        {
+          title: `CRMPort v${pkg.version}`,
+          tooltip: 'Server version',
+          enabled: false,
+        },
+        { title: '─────────', tooltip: '', enabled: false },
+        {
+          title: 'Open Config',
+          tooltip: 'Open configuration in browser',
+          enabled: true,
+        },
+        {
+          title: 'Restart Server',
+          tooltip: 'Restart the server process',
+          enabled: true,
+        },
+        { title: '─────────', tooltip: '', enabled: false },
+        {
+          title: 'Quit',
+          tooltip: 'Stop server and exit',
+          enabled: true,
+        },
+      ],
+    },
+    debug: false,
+    copyDir: true,
+  });
 
-    systray.onClick((action: any) => {
-      switch (action.seq_id) {
-        case 2: // Open Config
-          openBrowser(`http://localhost:${config.port}/config/`);
-          break;
-        case 3: // Restart Server
-          restartServer();
-          break;
-        case 5: // Quit
-          shutdown();
-          break;
-      }
-    });
+  await systray.ready();
 
-    // Handle systray ready
-    systray.onReady(() => {
-      console.log('Tray icon ready');
-    });
+  systray.onClick((action: any) => {
+    switch (action.seq_id) {
+      case 2: // Open Config
+        openBrowser(`http://localhost:${config.port}/config/`);
+        break;
+      case 3: // Restart Server
+        restartServer();
+        break;
+      case 5: // Quit
+        shutdown();
+        break;
+    }
+  });
 
-    // Store for cleanup
-    (global as any).__systray = systray;
-  } catch (err) {
-    console.warn('Tray icon not available (running headless):', err);
-  }
+  console.log('Tray icon ready');
+
+  // Store for cleanup
+  (global as any).__systray = systray;
 }
 
 function openBrowser(url: string): void {
   const { exec } = require('node:child_process');
-  // Windows
   exec(`start "" "${url}"`, (err: Error | null) => {
-    if (err) console.error('Failed to open browser:', err);
+    if (err) throw err;
   });
 }
 
 async function setupAutostart(): Promise<void> {
   if (!config.autostart) return;
 
-  try {
-    const AutoLaunch = (await import('auto-launch')).default;
-    const launcher = new AutoLaunch({
-      name: 'CRMPort',
-      path: process.execPath,
-      isHidden: true,
-    });
+  const AutoLaunch = (await import('auto-launch')).default;
+  const launcher = new AutoLaunch({
+    name: 'CRMPort',
+    path: process.execPath,
+    isHidden: true,
+  });
 
-    const isEnabled = await launcher.isEnabled();
-    if (!isEnabled) {
-      await launcher.enable();
-      console.log('Autostart enabled');
-    }
-  } catch (err) {
-    console.warn('Failed to configure autostart:', err);
+  const isEnabled = await launcher.isEnabled();
+  if (!isEnabled) {
+    await launcher.enable();
+    console.log('Autostart enabled');
   }
 }
 
