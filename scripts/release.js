@@ -1,14 +1,15 @@
 #!/usr/bin/env node
 /**
- * release.js — Build installer and create a GitHub release.
+ * release.js — Commit version bump, build, create GitHub release.
  *
- * Usage: npm run release
+ * Called by: npm run release
+ * By the time this runs, bump.js has already run (minor bump) and build has completed.
  *
- * 1. Reads version from packages/server/package.json
- * 2. Creates the MSI installer (placeholder — replace with actual WiX/NSIS build)
- * 3. Signs the binary with the code-signing key
- * 4. Creates a GitHub release tagged v{version}
- * 5. Uploads the installer as a release asset
+ * Steps:
+ * 1. Commit package.json + package-lock.json (version bump)
+ * 2. Create installer artifact
+ * 3. Sign if code-signing key exists
+ * 4. Tag, push, create GitHub release with asset
  */
 'use strict';
 
@@ -16,79 +17,88 @@ const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
-const serverPkg = JSON.parse(
-  fs.readFileSync(path.join(__dirname, '..', 'packages', 'server', 'package.json'), 'utf-8')
-);
-const version = serverPkg.version;
+const rootDir = path.join(__dirname, '..');
+const rootPkg = JSON.parse(fs.readFileSync(path.join(rootDir, 'package.json'), 'utf-8'));
+const version = rootPkg.version;
 const tag = `v${version}`;
-const distDir = path.join(__dirname, '..', 'dist');
 
-console.log(`Releasing CRMPort ${tag}`);
+console.log(`\nReleasing CRMPort ${tag}\n`);
 
-// Ensure dist directory
+// ── Step 1: Commit the version bump ─────────────────────────────────
+
+execSync('git add package.json package-lock.json packages/server/package.json packages/sdk/package.json', {
+  cwd: rootDir,
+  stdio: 'inherit',
+});
+execSync(`git commit -m "v${version}"`, {
+  cwd: rootDir,
+  stdio: 'inherit',
+});
+console.log(`Committed v${version}`);
+
+// ── Step 2: Create installer artifact ───────────────────────────────
+
+const distDir = path.join(rootDir, 'dist');
 fs.mkdirSync(distDir, { recursive: true });
 
-// Build the server binary (placeholder — in production this would be pkg/nexe/sea)
-const serverDist = path.join(__dirname, '..', 'packages', 'server', 'dist');
+const serverDist = path.join(rootDir, 'packages', 'server', 'dist');
 if (!fs.existsSync(path.join(serverDist, 'main.js'))) {
-  throw new Error('Server not built — run npm run build first');
+  throw new Error('Server not built — build step failed');
 }
 
-// Create installer package name
-const platform = process.platform === 'win32' ? 'setup.msi' : process.platform === 'darwin' ? '.pkg' : '.deb';
-const installerName = `CRMPort-${version}-${platform}`;
+const platformExt = process.platform === 'win32' ? 'setup.msi' : process.platform === 'darwin' ? '.pkg' : '.deb';
+const installerName = `CRMPort-${version}-${platformExt}`;
 const installerPath = path.join(distDir, installerName);
 
-// Placeholder: create a zip of the dist as the "installer"
-// In production, replace this with WiX (MSI), pkgbuild (macOS), or dpkg-deb (Linux)
-console.log(`Creating ${installerName}...`);
+// Placeholder: tar.gz of dist (replace with WiX/pkgbuild/dpkg-deb in production)
+console.log(`Creating ${installerName}.tar.gz...`);
 execSync(`tar -czf "${installerPath}.tar.gz" -C "${serverDist}" .`, { stdio: 'inherit' });
 const assetPath = `${installerPath}.tar.gz`;
 const assetName = `${installerName}.tar.gz`;
 
-// Sign if code-signing key exists
+// ── Step 3: Sign ────────────────────────────────────────────────────
+
 const keysDir = path.join(require('os').homedir(), '.crmport', 'keys');
 const codeSignKeyPath = path.join(keysDir, 'codesign.key');
 if (fs.existsSync(codeSignKeyPath)) {
   console.log('Signing release artifact...');
   execSync(`npx tsx packages/server/src/tools/keygen.ts sign "${assetPath}"`, {
-    cwd: path.join(__dirname, '..'),
+    cwd: rootDir,
     stdio: 'inherit',
   });
 }
 
-// Sync root package.json version
-const rootPkgPath = path.join(__dirname, '..', 'package.json');
-const rootPkg = JSON.parse(fs.readFileSync(rootPkgPath, 'utf-8'));
-rootPkg.version = version;
-fs.writeFileSync(rootPkgPath, JSON.stringify(rootPkg, null, 2) + '\n');
+// ── Step 4: Tag + push + GitHub release ─────────────────────────────
 
-// Git tag
+execSync(`git tag ${tag}`, { cwd: rootDir, stdio: 'inherit' });
+execSync(`git push origin main ${tag}`, { cwd: rootDir, stdio: 'inherit' });
+console.log(`Pushed ${tag}`);
+
+// Generate release notes from commits since last tag
+let notes;
 try {
-  execSync(`git tag ${tag}`, { stdio: 'inherit' });
+  const lastTag = execSync('git describe --tags --abbrev=0 HEAD~1', { cwd: rootDir, encoding: 'utf-8' }).trim();
+  const log = execSync(`git log ${lastTag}..HEAD~1 --pretty=format:"- %s" --no-merges`, { cwd: rootDir, encoding: 'utf-8' }).trim();
+  notes = log || `CRMPort ${tag}`;
 } catch {
-  console.log(`Tag ${tag} already exists, skipping`);
+  // No previous tag — include all commits
+  const log = execSync('git log --pretty=format:"- %s" --no-merges -20', { cwd: rootDir, encoding: 'utf-8' }).trim();
+  notes = log || `CRMPort ${tag}`;
 }
 
-// Push tag
-execSync(`git push origin ${tag}`, { stdio: 'inherit' });
-
-// Create GitHub release with asset
-console.log(`Creating GitHub release ${tag}...`);
-const releaseArgs = [
+const releaseCmd = [
   `gh release create ${tag}`,
   `--title "CRMPort ${tag}"`,
-  `--notes "CRMPort ${tag} release"`,
+  `--notes "${notes.replace(/"/g, '\\"')}"`,
   `"${assetPath}#${assetName}"`,
 ];
 
-// Upload .sig file if it exists
 const sigPath = `${assetPath}.sig`;
 if (fs.existsSync(sigPath)) {
-  releaseArgs.push(`"${sigPath}#${assetName}.sig"`);
+  releaseCmd.push(`"${sigPath}#${assetName}.sig"`);
 }
 
-execSync(releaseArgs.join(' '), { stdio: 'inherit' });
+execSync(releaseCmd.join(' '), { cwd: rootDir, stdio: 'inherit' });
 
 console.log(`\nReleased CRMPort ${tag}`);
-console.log(`  https://github.com/davwright/CRMPort/releases/tag/${tag}`);
+console.log(`https://github.com/davwright/CRMPort/releases/tag/${tag}`);

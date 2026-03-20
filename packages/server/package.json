@@ -1,14 +1,11 @@
 {
   "name": "@crmport/server",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "private": true,
   "description": "CRMPort local server",
   "main": "dist/main.js",
   "scripts": {
-    "bump": "node -e \"const f='package.json';const p=JSON.parse(require('fs').readFileSync(f));const v=p.version.split('.');v[2]=+v[2]+1;p.version=v.join('.');require('fs').writeFileSync(f,JSON.stringify(p,null,2)+'\\n');console.log('v'+p.version)\"",
-    "prebuild": "npm run bump",
     "build": "tsc",
-    "predev": "npm run bump",
     "dev": "tsx watch src/main.ts",
     "start": "node dist/main.js",
     "keygen": "tsx src/tools/keygen.ts"

@@ -1,6 +1,6 @@
 {
   "name": "crmport",
-  "version": "0.1.0",
+  "version": "0.1.4",
   "private": true,
   "license": "MIT",
   "description": "Local plugin server bridging CRM browser extensions to dev tools",
@@ -9,11 +9,12 @@
     "packages/sdk"
   ],
   "scripts": {
+    "bump:patch": "node scripts/bump.js patch",
+    "bump:minor": "node scripts/bump.js minor",
     "build": "npm run build --workspace=packages/server && npm run build --workspace=packages/sdk",
+    "predev": "node scripts/bump.js patch",
     "dev": "npm run dev --workspace=packages/server",
-    "build:server": "npm run build --workspace=packages/server",
-    "build:sdk": "npm run build --workspace=packages/sdk",
-    "release": "npm run build && node scripts/release.js"
+    "release": "node scripts/bump.js minor && npm run build && node scripts/release.js"
   },
   "engines": {
     "node": ">=20.0.0"
