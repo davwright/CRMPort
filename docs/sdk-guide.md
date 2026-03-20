@@ -153,6 +153,21 @@ async function registerPlugin() {
   if (data.capabilityToken) await saveToken(data.capabilityToken);
 }
 
+// ── Authentication (auto-renews expired tokens) ─────────────────
+async function authenticate() {
+  try {
+    return await rpc('auth', {
+      token: capabilityToken, version: VER, pluginId: PLUGIN_ID,
+    });
+  } catch (e) {
+    // Token expired — re-register for a fresh one
+    await registerPlugin();
+    return await rpc('auth', {
+      token: capabilityToken, version: VER, pluginId: PLUGIN_ID,
+    });
+  }
+}
+
 // ── WebSocket ───────────────────────────────────────────────────
 function connect() {
   if (ws?.readyState === WebSocket.OPEN) return;
@@ -160,11 +175,7 @@ function connect() {
 
   ws.onopen = async () => {
     await ensurePlugin();
-    const result = await rpc('auth', {
-      token: capabilityToken,
-      version: VER,
-      pluginId: PLUGIN_ID,
-    });
+    await authenticate();
     authenticated = true;
     serverConnected = true;
   };
@@ -479,7 +490,7 @@ try {
 
 ## Security Model
 
-- **Capability tokens** (Ed25519 JWT): issued on registration, scoped to specific paths/commands, expire after 90 days
+- **Capability tokens** (Ed25519 JWT): issued on registration, scoped to specific paths/commands, expire after 90 days. On expiry, the `authenticate()` function automatically re-registers and gets a fresh token — no user action needed
 - **Code signing** (Ed25519): release binaries are signed with a private key kept on the build machine. The server verifies updates against the embedded public key before applying
 - **Worker isolation**: plugins run in Node.js worker threads with memory limits (64 MB heap)
 - **CORS**: only `chrome-extension://` and `moz-extension://` origins are allowed
