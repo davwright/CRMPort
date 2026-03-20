@@ -9,7 +9,7 @@
       --bg: #1a1a2e;
       --surface: #16213e;
       --surface2: #0f3460;
-      --accent: #e94560;
+      --accent: #4ade80;
       --text: #eee;
       --text-muted: #999;
       --green: #4ade80;
@@ -236,6 +236,7 @@
     });
 
     const API = `http://${location.hostname}:${location.port}`;
+    let knownVersion = null;
 
     function formatUptime(seconds) {
       const h = Math.floor(seconds / 3600);
@@ -247,6 +248,14 @@
     async function refresh() {
       try {
         const health = await fetch(API + '/health').then(r => r.json());
+
+        // Auto-reload on version change
+        if (knownVersion && knownVersion !== health.version) {
+          location.reload();
+          return;
+        }
+        knownVersion = health.version;
+
         document.getElementById('version').textContent = 'v' + health.version;
         document.getElementById('srv-version').textContent = health.version;
         document.getElementById('srv-uptime').textContent = formatUptime(health.uptime);
@@ -316,6 +325,60 @@
     // Auto-refresh
     refresh();
     setInterval(refresh, 5000);
+
+    // ── Log streaming ──────────────────────────────────────────────
+    const logContainer = document.getElementById('log-container');
+    const MAX_LOG_LINES = 500;
+    let logWs = null;
+
+    function connectLogs() {
+      const wsUrl = `ws://${location.hostname}:${location.port}/ws/logs`;
+      logWs = new WebSocket(wsUrl);
+
+      logWs.onopen = () => {
+        logContainer.innerHTML = '';
+        appendLog('info', 'Connected to log stream');
+      };
+
+      logWs.onmessage = (event) => {
+        try {
+          const entry = JSON.parse(event.data);
+          const level = entry.level || 'info';
+          if (entry.method && entry.url) {
+            appendLog(level, `${entry.method} ${entry.url} → ${entry.status} (${entry.ms}ms)`);
+          } else if (entry.msg) {
+            appendLog(level, entry.msg);
+          }
+        } catch {
+          appendLog('info', event.data);
+        }
+      };
+
+      logWs.onclose = () => {
+        appendLog('warn', 'Log stream disconnected — reconnecting...');
+        setTimeout(connectLogs, 3000);
+      };
+
+      logWs.onerror = () => {};
+    }
+
+    function appendLog(level, text) {
+      const line = document.createElement('div');
+      line.className = 'log-line log-' + level;
+      const ts = new Date().toLocaleTimeString();
+      line.textContent = `[${ts}] ${text}`;
+      logContainer.appendChild(line);
+
+      // Trim old lines
+      while (logContainer.children.length > MAX_LOG_LINES) {
+        logContainer.removeChild(logContainer.firstChild);
+      }
+
+      // Auto-scroll
+      logContainer.scrollTop = logContainer.scrollHeight;
+    }
+
+    connectLogs();
   </script>
 </body>
 </html>

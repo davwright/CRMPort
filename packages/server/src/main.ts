@@ -1,10 +1,14 @@
-import { fork, type ChildProcess } from 'node:child_process';
+import { fork, spawn, type ChildProcess } from 'node:child_process';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
+import * as https from 'node:https';
+import * as http from 'node:http';
 import { loadConfig } from './config.js';
+import { loadPublicKey, verifySignature } from './security.js';
 
 const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
 const config = loadConfig();
+const isDev = process.argv.some(a => a.includes('tsx'));
 
 let serverProcess: ChildProcess | null = null;
 let isShuttingDown = false;
@@ -12,13 +16,16 @@ let isShuttingDown = false;
 function startServer(): void {
   const serverScript = path.join(__dirname, 'server.js');
   serverProcess = fork(serverScript, [], {
-    stdio: 'pipe',
+    stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
     env: { ...process.env, CRMPORT_SUPERVISED: '1' },
   });
 
   serverProcess.on('message', (msg: any) => {
     if (msg.type === 'started') {
       console.log(`Server started on port ${msg.port}`);
+    }
+    if (msg.type === 'self-update') {
+      selfUpdate(msg.version, msg.url);
     }
   });
 
@@ -146,6 +153,90 @@ async function setupAutostart(): Promise<void> {
   }
 }
 
+async function selfUpdate(version: string, url: string): Promise<void> {
+  console.log(`Self-update: v${pkg.version} → v${version}`);
+
+  // Load code-signing public key — required for update verification
+  const codeSignPubPath = path.join(config.keysDir, 'codesign.pub');
+  if (!fs.existsSync(codeSignPubPath)) {
+    throw new Error('Self-update: no code-signing public key — cannot verify update');
+  }
+  const codeSigningKey = loadPublicKey(fs.readFileSync(codeSignPubPath, 'utf8'));
+
+  const exe = process.execPath;
+  const dir = path.dirname(exe);
+  const ext = path.extname(exe);
+  const newPath = path.join(dir, `crmport-new${ext}`);
+  const oldPath = path.join(dir, `crmport-old${ext}`);
+
+  // Download helper (follows redirects)
+  const downloadBuffer = (downloadUrl: string): Promise<Buffer> => new Promise((resolve, reject) => {
+    const proto = downloadUrl.startsWith('https') ? https : http;
+    proto.get(downloadUrl, (res) => {
+      if (res.statusCode === 301 || res.statusCode === 302) {
+        const location = res.headers.location;
+        if (!location) return reject(new Error('Redirect with no location'));
+        downloadBuffer(location).then(resolve, reject);
+        return;
+      }
+      if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode}`));
+      const chunks: Buffer[] = [];
+      res.on('data', (chunk: Buffer) => chunks.push(chunk));
+      res.on('end', () => resolve(Buffer.concat(chunks)));
+      res.on('error', reject);
+    }).on('error', reject);
+  });
+
+  // Download binary and signature
+  console.log(`Self-update: downloading binary from ${url}`);
+  const [binary, sigText] = await Promise.all([
+    downloadBuffer(url),
+    downloadBuffer(`${url}.sig`).then(buf => buf.toString('utf8').trim()),
+  ]);
+
+  // Verify signature
+  if (!verifySignature(binary, sigText, codeSigningKey)) {
+    throw new Error('Self-update: signature verification FAILED — aborting');
+  }
+  console.log('Self-update: signature verified');
+
+  // Write new binary
+  fs.writeFileSync(newPath, binary);
+
+  // Swap: current → old, new → current
+  if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+  fs.renameSync(exe, oldPath);
+  fs.renameSync(newPath, exe);
+
+  console.log(`Self-update: binary replaced, restarting as v${version}...`);
+
+  // Stop server child and tray
+  isShuttingDown = true;
+  stopServer();
+
+  const systray = (global as any).__systray;
+  if (systray) systray.kill(false);
+
+  // Re-exec with inherited stdio (same console, same output)
+  const child = spawn(exe, process.argv.slice(1), {
+    stdio: 'inherit',
+    detached: false,
+  });
+
+  child.on('error', (err) => {
+    console.error('Self-update restart failed:', err);
+    // Roll back
+    fs.renameSync(exe, newPath);
+    fs.renameSync(oldPath, exe);
+    if (fs.existsSync(newPath)) fs.unlinkSync(newPath);
+    console.error('Rolled back to previous version');
+    process.exit(1);
+  });
+
+  child.unref();
+  process.exit(0);
+}
+
 async function shutdown(): Promise<void> {
   isShuttingDown = true;
   stopServer();
@@ -164,9 +255,15 @@ async function shutdown(): Promise<void> {
 async function main(): Promise<void> {
   console.log(`CRMPort v${pkg.version} starting...`);
 
-  await setupAutostart();
+  if (!isDev) {
+    await setupAutostart();
+  }
+
   startServer();
-  await initTray();
+
+  if (!isDev) {
+    await initTray();
+  }
 
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);

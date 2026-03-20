@@ -213,6 +213,41 @@ export async function createServer() {
     return { ok: true };
   });
 
+  // Deploy plugin files and (re)load
+  app.post<{ Body: {
+    pluginId: string;
+    files: Record<string, string>; // { "plugin.json": "...", "index.js": "..." }
+  } }>('/api/deploy-plugin', async (req, reply) => {
+    const { pluginId, files } = req.body;
+    if (!pluginId || !files || typeof files !== 'object') {
+      return reply.status(400).send({ error: 'Missing pluginId or files' });
+    }
+
+    // Verify plugin is registered
+    const registry = loadRegistry();
+    const reg = registry.find((r) => r.pluginId === pluginId);
+    if (!reg) {
+      return reply.status(404).send({ error: `Plugin ${pluginId} not registered — call /api/register first` });
+    }
+
+    // Write files to plugin directory
+    const pluginDir = path.join(config.pluginsDir, pluginId);
+    fs.mkdirSync(pluginDir, { recursive: true });
+
+    for (const [filename, content] of Object.entries(files)) {
+      // Sanitize filename — no path traversal
+      const safe = path.basename(filename);
+      fs.writeFileSync(path.join(pluginDir, safe), content, 'utf8');
+    }
+
+    // (Re)load the plugin
+    await pluginManager.loadPlugin(reg);
+    app.log.info(`Deployed and loaded plugin: ${pluginId}`);
+    broadcastLog('info', `Plugin deployed: ${pluginId}`);
+
+    return { ok: true, pluginId, files: Object.keys(files) };
+  });
+
   app.get('/api/config', async () => config);
 
   app.post<{ Body: Partial<ServerConfig> }>('/api/config', async (req) => {
@@ -220,6 +255,46 @@ export async function createServer() {
     const newConfig = { ...config, ...updates };
     saveConfig(newConfig);
     return { ok: true, config: newConfig };
+  });
+
+  // --- Log streaming for config UI ---
+
+  const logSubscribers = new Set<import('ws').WebSocket>();
+
+  // Hook into Fastify's pino logger to broadcast log lines
+  const origWrite = (app.log as any)[Symbol.for('pino.logWrite')] || null;
+  app.addHook('onResponse', (request, reply, done) => {
+    if (logSubscribers.size > 0) {
+      const line = JSON.stringify({
+        time: Date.now(),
+        level: 'info',
+        method: request.method,
+        url: request.url,
+        status: reply.statusCode,
+        ms: Math.round(reply.elapsedTime),
+      });
+      for (const ws of logSubscribers) {
+        if (ws.readyState === 1) ws.send(line);
+      }
+    }
+    done();
+  });
+
+  // Broadcast arbitrary log messages
+  function broadcastLog(level: string, msg: string) {
+    if (logSubscribers.size === 0) return;
+    const line = JSON.stringify({ time: Date.now(), level, msg });
+    for (const ws of logSubscribers) {
+      if (ws.readyState === 1) ws.send(line);
+    }
+  }
+
+  app.register(async function (logWsApp) {
+    logWsApp.get('/ws/logs', { websocket: true }, (socket) => {
+      logSubscribers.add(socket);
+      socket.send(JSON.stringify({ time: Date.now(), level: 'info', msg: `Connected — CRMPort v${pkg.version}` }));
+      socket.on('close', () => logSubscribers.delete(socket));
+    });
   });
 
   // --- WebSocket Route (JSON-RPC 2.0) ---
@@ -279,6 +354,7 @@ export async function createServer() {
             updater.checkClientVersion(pluginId, params.version);
           }
 
+          broadcastLog('info', `Plugin authenticated: ${pluginId} v${params?.version || '?'}`);
           socket.send(JSON.stringify({
             jsonrpc: '2.0', id,
             result: {
@@ -455,11 +531,22 @@ export async function createServer() {
       try {
         await pluginManager.reloadPlugin(reg);
         app.log.info(`Hot-reloaded plugin: ${pluginId} v${version}`);
+        broadcastLog('info', `Hot-reloaded plugin: ${pluginId} v${version}`);
       } catch (err: any) {
         app.log.error(`Failed to reload plugin ${pluginId}: ${err.message}`);
       }
     }
   });
+  // Self-update: when a client connects with a newer SDK version, tell the supervisor
+  updater.on('update:clientNewer', (pluginId: string, versions: { server: string; client: string }) => {
+    app.log.info(`Client ${pluginId} has newer SDK v${versions.client} (server is v${versions.server})`);
+    const platform = process.platform === 'win32' ? 'exe' : process.platform === 'darwin' ? 'macos' : 'linux';
+    const url = `https://github.com/davwright/CRMPort/releases/download/v${versions.client}/crmport-${platform}`;
+    if (process.send) {
+      process.send({ type: 'self-update', version: versions.client, url });
+    }
+  });
+
   updater.on('update:fileChanged', async (pluginId: string) => {
     const reg = loadRegistry().find((r) => r.pluginId === pluginId);
     if (reg) {
@@ -490,6 +577,7 @@ export async function createServer() {
   // Start listening
   await app.listen({ port: config.port, host: config.host });
   app.log.info(`CRMPort server v${pkg.version} listening on ${config.host}:${config.port}`);
+  broadcastLog('info', `Server v${pkg.version} listening on ${config.host}:${config.port}`);
 
   // Notify parent process (supervisor)
   if (process.send) {
