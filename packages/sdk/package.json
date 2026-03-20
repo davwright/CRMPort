@@ -1,6 +1,6 @@
 {
   "name": "@crmport/sdk",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Client SDK for CRMPort - connect browser extensions to the local CRMPort server",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
