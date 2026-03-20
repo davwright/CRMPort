@@ -20,7 +20,13 @@ import {
 } from './security.js';
 import { CapabilityEnforcer, RateLimiter } from './capability.js';
 
-const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
+function resolveAsset(...segments: string[]): string {
+  const flat = path.join(__dirname, ...segments);
+  if (fs.existsSync(flat)) return flat;
+  return path.join(__dirname, '..', ...segments);
+}
+
+const pkg = JSON.parse(fs.readFileSync(resolveAsset('package.json'), 'utf8'));
 const startTime = Date.now();
 
 export async function createServer() {
@@ -75,7 +81,7 @@ export async function createServer() {
   });
 
   // Serve config UI
-  const configUiPath = path.join(__dirname, '..', 'config-ui');
+  const configUiPath = resolveAsset('config-ui');
   if (fs.existsSync(configUiPath)) {
     await app.register(fastifyStatic, { root: configUiPath, prefix: '/config/' });
   }

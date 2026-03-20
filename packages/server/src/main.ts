@@ -6,7 +6,13 @@ import * as http from 'node:http';
 import { loadConfig } from './config.js';
 import { loadPublicKey, verifySignature } from './security.js';
 
-const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
+function resolveAsset(...segments: string[]): string {
+  const flat = path.join(__dirname, ...segments);
+  if (fs.existsSync(flat)) return flat;
+  return path.join(__dirname, '..', ...segments);
+}
+
+const pkg = JSON.parse(fs.readFileSync(resolveAsset('package.json'), 'utf8'));
 const config = loadConfig();
 const isDev = process.argv.some(a => a.includes('tsx'));
 
@@ -70,7 +76,7 @@ async function initTray(): Promise<void> {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const { default: SysTray } = require('systray2') as typeof import('systray2');
 
-  const iconPath = path.join(__dirname, '..', 'assets', 'icon.ico');
+  const iconPath = resolveAsset('assets', 'icon.ico');
   const icon = fs.readFileSync(iconPath).toString('base64');
 
   const systray = new SysTray({

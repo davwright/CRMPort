@@ -75,35 +75,40 @@ if (fs.existsSync(assetsSrc)) {
   execSync(`xcopy /s /y /q "${assetsSrc}\\*" "${assetsDst}\\"`, { stdio: 'inherit' });
 }
 
-// Copy package.json for version info
-fs.copyFileSync(
-  path.join(rootDir, 'packages', 'server', 'package.json'),
-  path.join(stageDir, 'package.json'),
-);
+// Write a minimal package.json with only external deps (everything else is bundled)
+const serverPkg = JSON.parse(fs.readFileSync(path.join(rootDir, 'packages', 'server', 'package.json'), 'utf-8'));
+fs.writeFileSync(path.join(stageDir, 'package.json'), JSON.stringify({
+  name: 'crmport',
+  version,
+  private: true,
+  dependencies: {
+    systray2: serverPkg.dependencies.systray2,
+  },
+}, null, 2) + '\n');
 
-// Copy only external deps (systray2) — everything else is bundled by esbuild
-// Only include the current platform's tray binary to save ~7MB
-const systrayDir = path.join(rootDir, 'node_modules', 'systray2');
-if (fs.existsSync(systrayDir)) {
-  const dst = path.join(stageDir, 'node_modules', 'systray2');
-  fs.mkdirSync(path.join(stageDir, 'node_modules'), { recursive: true });
-  execSync(`xcopy /s /y /q "${systrayDir}\\*" "${dst}\\"`, { stdio: 'inherit' });
+// Install external deps with their full dependency trees
+console.log('Installing external dependencies...');
+execSync('npm install --omit=dev', { cwd: stageDir, stdio: 'inherit' });
 
-  // Remove other platform binaries
-  const trayBinDir = path.join(dst, 'traybin');
-  if (fs.existsSync(trayBinDir)) {
-    const keep = process.platform === 'win32' ? 'tray_windows_release.exe'
-               : process.platform === 'darwin' ? 'tray_darwin_release'
-               : 'tray_linux_release';
-    for (const f of fs.readdirSync(trayBinDir)) {
-      if (f !== keep) fs.unlinkSync(path.join(trayBinDir, f));
-    }
+// Remove other platform tray binaries to save ~7MB
+const trayBinDir = path.join(stageDir, 'node_modules', 'systray2', 'traybin');
+if (fs.existsSync(trayBinDir)) {
+  const keep = process.platform === 'win32' ? 'tray_windows_release.exe'
+             : process.platform === 'darwin' ? 'tray_darwin_release'
+             : 'tray_linux_release';
+  for (const f of fs.readdirSync(trayBinDir)) {
+    if (f !== keep) fs.unlinkSync(path.join(trayBinDir, f));
   }
 }
 
-// Copy install/uninstall scripts
+// Remove package-lock from stage (not needed at runtime)
+const stageLock = path.join(stageDir, 'package-lock.json');
+if (fs.existsSync(stageLock)) fs.unlinkSync(stageLock);
+
+// Copy install/uninstall scripts and README
 fs.copyFileSync(path.join(rootDir, 'scripts', 'install.bat'), path.join(stageDir, 'install.bat'));
 fs.copyFileSync(path.join(rootDir, 'scripts', 'uninstall.bat'), path.join(stageDir, 'uninstall.bat'));
+fs.copyFileSync(path.join(rootDir, 'scripts', 'INSTALL-README.txt'), path.join(stageDir, 'README.txt'));
 
 // Zip it
 console.log(`Creating ${assetName}...`);
