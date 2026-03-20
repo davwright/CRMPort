@@ -46,15 +46,15 @@ if (!fs.existsSync(path.join(serverDist, 'main.js'))) {
   throw new Error('Server not built — build step failed');
 }
 
-const platformExt = process.platform === 'win32' ? 'setup.msi' : process.platform === 'darwin' ? '.pkg' : '.deb';
-const installerName = `CRMPort-${version}-${platformExt}`;
-const installerPath = path.join(distDir, installerName);
+// TODO: Replace with real MSI build (WiX / Inno Setup) when ready
+const installerName = `CRMPort-${version}-setup`;
+const assetName = `${installerName}.zip`;
+const assetPath = path.join(distDir, assetName);
 
-// Placeholder: tar.gz of dist (replace with WiX/pkgbuild/dpkg-deb in production)
-console.log(`Creating ${installerName}.tar.gz...`);
-execSync(`tar -czf "${installerPath}.tar.gz" -C "${serverDist}" .`, { stdio: 'inherit' });
-const assetPath = `${installerPath}.tar.gz`;
-const assetName = `${installerName}.tar.gz`;
+console.log(`Creating ${assetName}...`);
+execSync(`powershell -Command "Compress-Archive -Path '${serverDist}\\*' -DestinationPath '${assetPath}' -Force"`, {
+  stdio: 'inherit',
+});
 
 // ── Step 3: Sign ────────────────────────────────────────────────────
 

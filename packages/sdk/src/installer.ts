@@ -88,13 +88,13 @@ export function getInstallerUrl(options?: {
 
   switch (platform) {
     case 'win32':
-      return `${base}/CRMPort-${tag}-setup.msi`;
+      return `${base}/CRMPort-${tag}-setup.zip`;
     case 'darwin':
       return `${base}/CRMPort-${tag}.pkg`;
     case 'linux':
       return `${base}/CRMPort-${tag}.deb`;
     default:
-      return `${base}/CRMPort-${tag}-setup.msi`;
+      return `${base}/CRMPort-${tag}-setup.zip`;
   }
 }
 
