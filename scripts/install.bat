@@ -20,12 +20,20 @@ del "%INSTALL_DIR%\install.bat" 2>nul
 del "%INSTALL_DIR%\uninstall.bat" 2>nul
 copy "%~dp0uninstall.bat" "%INSTALL_DIR%\uninstall.bat" >nul
 
+:: Check Node.js
+where node >nul 2>nul
+if errorlevel 1 (
+    echo ERROR: Node.js not found. Install from https://nodejs.org
+    pause
+    exit /b 1
+)
+
 :: Create startup shortcut
-powershell -Command "$ws=New-Object -ComObject WScript.Shell;$s=$ws.CreateShortcut('%STARTUP_DIR%\%APP%.lnk');$s.TargetPath='%INSTALL_DIR%\node_modules\.bin\node.exe';$s.Arguments='%INSTALL_DIR%\main.js';$s.WorkingDirectory='%INSTALL_DIR%';$s.WindowStyle=7;$s.Save()"
+powershell -Command "$ws=New-Object -ComObject WScript.Shell;$s=$ws.CreateShortcut('%STARTUP_DIR%\%APP%.lnk');$s.TargetPath=(Get-Command node).Source;$s.Arguments='\"$env:LOCALAPPDATA\%APP%\main.js\"';$s.WorkingDirectory='%INSTALL_DIR%';$s.WindowStyle=7;$s.Save()"
 
 :: Start now
 echo Starting %APP%...
-start "" /min "%INSTALL_DIR%\node_modules\.bin\node.exe" "%INSTALL_DIR%\main.js"
+start "" /min node "%INSTALL_DIR%\main.js"
 
 echo.
 echo Installed to %INSTALL_DIR%

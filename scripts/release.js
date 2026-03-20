@@ -55,8 +55,11 @@ const stageDir = path.join(distDir, 'stage');
 if (fs.existsSync(stageDir)) fs.rmSync(stageDir, { recursive: true });
 fs.mkdirSync(stageDir, { recursive: true });
 
-// Copy built server
+// Copy built server (exclude sourcemaps)
 execSync(`xcopy /s /y /q "${serverDist}\\*" "${stageDir}\\"`, { stdio: 'inherit' });
+for (const f of fs.readdirSync(stageDir)) {
+  if (f.endsWith('.map')) fs.unlinkSync(path.join(stageDir, f));
+}
 
 // Copy config-ui
 const configUiSrc = path.join(rootDir, 'packages', 'server', 'config-ui');
@@ -78,8 +81,25 @@ fs.copyFileSync(
   path.join(stageDir, 'package.json'),
 );
 
-// Install production deps into stage
-execSync('npm install --omit=dev', { cwd: stageDir, stdio: 'inherit' });
+// Copy only external deps (systray2) — everything else is bundled by esbuild
+// Only include the current platform's tray binary to save ~7MB
+const systrayDir = path.join(rootDir, 'node_modules', 'systray2');
+if (fs.existsSync(systrayDir)) {
+  const dst = path.join(stageDir, 'node_modules', 'systray2');
+  fs.mkdirSync(path.join(stageDir, 'node_modules'), { recursive: true });
+  execSync(`xcopy /s /y /q "${systrayDir}\\*" "${dst}\\"`, { stdio: 'inherit' });
+
+  // Remove other platform binaries
+  const trayBinDir = path.join(dst, 'traybin');
+  if (fs.existsSync(trayBinDir)) {
+    const keep = process.platform === 'win32' ? 'tray_windows_release.exe'
+               : process.platform === 'darwin' ? 'tray_darwin_release'
+               : 'tray_linux_release';
+    for (const f of fs.readdirSync(trayBinDir)) {
+      if (f !== keep) fs.unlinkSync(path.join(trayBinDir, f));
+    }
+  }
+}
 
 // Copy install/uninstall scripts
 fs.copyFileSync(path.join(rootDir, 'scripts', 'install.bat'), path.join(stageDir, 'install.bat'));
