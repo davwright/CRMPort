@@ -9,7 +9,7 @@
     "packages/sdk"
   ],
   "scripts": {
-    "build": "npm run build --workspaces",
+    "build": "npm run build --workspace=packages/server && npm run build --workspace=packages/sdk",
     "dev": "npm run dev --workspace=packages/server",
     "build:server": "npm run build --workspace=packages/server",
     "build:sdk": "npm run build --workspace=packages/sdk",
